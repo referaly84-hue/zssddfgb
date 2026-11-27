@@ -373,6 +373,34 @@ function stableHash(s: string): number {
   return h >>> 0;
 }
 
+function extractFixtureSideCards(f: any, side: "home" | "away", tid?: string): { yc: number; rc: number } {
+  const teamSt = f?.st?.teams?.[side];
+  if (teamSt && (teamSt.yc !== undefined || teamSt.rc !== undefined)) {
+    return { yc: Number(teamSt.yc || 0), rc: Number(teamSt.rc || 0) };
+  }
+  const legacySide = f?.st?.[side];
+  if (legacySide && (legacySide.yc !== undefined || legacySide.rc !== undefined)) {
+    return { yc: Number(legacySide.yc || 0), rc: Number(legacySide.rc || 0) };
+  }
+  if (f?.st?.yellow?.[side] !== undefined || f?.st?.red?.[side] !== undefined) {
+    return { yc: Number(f.st.yellow?.[side] || 0), rc: Number(f.st.red?.[side] || 0) };
+  }
+  const players = f?.st?.players;
+  if (players && typeof players === "object") {
+    let yc = 0;
+    let rc = 0;
+    for (const ps of Object.values(players) as any[]) {
+      if (!ps) continue;
+      if (ps.side === side || (tid && ps.t === tid)) {
+        yc += Number(ps.yc || 0);
+        rc += Number(ps.rc || 0);
+      }
+    }
+    return { yc, rc };
+  }
+  return { yc: 0, rc: 0 };
+}
+
 export function processMatchFinesAndFairPlay(ctx: FinesFairPlayContext, f: any, m: any) {
   if (!f || !m || f.comp === "friendly_match" || f.comp === "intra" || f.comp === "national" || f.comp === "national_u21") return;
   const db = ctx.getDb();
@@ -405,8 +433,9 @@ export function processMatchFinesAndFairPlay(ctx: FinesFairPlayContext, f: any, 
     }
 
     // Check st fallback if events didn't encode cards
-    if (yc === 0 && Number(f.st?.yellow?.[side] || 0) > 0) yc = Number(f.st.yellow[side]);
-    if (rc === 0 && Number(f.st?.red?.[side] || 0) > 0) rc = Number(f.st.red[side]);
+    const stCards = extractFixtureSideCards(f, side, tid);
+    if (yc === 0 && stCards.yc > 0) yc = stCards.yc;
+    if (rc === 0 && stCards.rc > 0) rc = stCards.rc;
 
     if (yc >= 5 || rc >= 2) {
       issueClubFine(ctx, {
@@ -518,8 +547,7 @@ export function computeFairPlayStandings(ctx: FinesFairPlayContext, compFilter?:
         s.noShows++;
         continue;
       }
-      const yc = Number(f.st?.yellow?.[side] || 0);
-      const rc = Number(f.st?.red?.[side] || 0);
+      const { yc, rc } = extractFixtureSideCards(f, side, tid);
       s.yc += yc;
       s.rc += rc;
       const hadMatchFine = finesAll.some((fn) => fn.fixtureId === f.id && fn.teamId === tid);
