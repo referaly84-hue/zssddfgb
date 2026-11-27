@@ -494,7 +494,7 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
                 <div class="chn-card-name">${escHtml(c.name)}</div>
                 <div class="chn-card-chat">${escHtml(chatPreview)}</div>
                 <div class="chn-card-meta">
-                  <span>${isBot ? `Пользователей: ${botStats.totalUsers}` : (c.usesGlobalChat ? "Общий чат" : c.effectiveChatId ? "Подключён" : "Настроить")}</span>
+                  <span>${isBot ? `Пользователей: ${botStats.totalUsers}` : (c.usesSecretsChat ? "secrets.json" : c.usesGlobalChat ? "Общий чат" : c.effectiveChatId ? "Подключён" : "Настроить")}</span>
                   <span>Правил: ${activeRulesCnt}</span>
                 </div>
               </button>
@@ -531,8 +531,8 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
             <div class="chn-field-grid">
               <div>
                 <label class="chn-label">${isPersonalBot ? "Username бота (@bot)" : "@username канала или Chat ID (-100...)"}</label>
-                <input id="chn_cfg_chat" type="text" value="${escHtml(isPersonalBot ? (selCfg.botUsername || "@RPLVIRT_bot") : (selCfg.chatId || ""))}" placeholder="${isPersonalBot ? "@RPLVIRT_bot" : (selCfg.id === "matchtv" ? (data.globalConfig?.globalChat || "@matchtv_rpl") : `@${selCfg.id}_virt`)}">
-                ${selCfg.id === "matchtv" && !selCfg.chatId && selCfg.effectiveChatId ? `<div class="small muted" style="margin-top:4px">Сейчас используется общий канал из Настроек: <b>${escHtml(selCfg.effectiveChatId)}</b></div>` : ""}
+                <input id="chn_cfg_chat" type="text" value="${escHtml(isPersonalBot ? (selCfg.botUsername || "@RPLVIRT_bot") : (selCfg.effectiveChatId || selCfg.chatId || ""))}" placeholder="${isPersonalBot ? "@RPLVIRT_bot" : (selCfg.id === "matchtv" ? (data.globalConfig?.globalChat || "@matchtv_rpl") : `@${selCfg.id}_virt`)}">
+                ${selCfg.usesSecretsChat ? `<div class="small muted" style="margin-top:4px">Загружено из <code>secrets.json</code> (<code>tgChannels.${escHtml(selCfg.id)}</code>)</div>` : (selCfg.id === "matchtv" && !selCfg.chatId && selCfg.effectiveChatId ? `<div class="small muted" style="margin-top:4px">Сейчас используется общий канал из Настроек: <b>${escHtml(selCfg.effectiveChatId)}</b></div>` : "")}
               </div>
               <div>
                 <label class="chn-label">Отдельный токен бота (необязательно)</label>

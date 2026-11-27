@@ -6199,6 +6199,11 @@ function hasPopulatedSecretsObj(sec: any): boolean {
   if (extractDbUrlFromSecObj(sec)) return true;
   if (secList(sec.geminiKeys, sec.geminiKey, sec.mistralKeys, sec.mistralKey, sec.openrouterKeys, sec.openrouterKey).length > 0) return true;
   if (String(sec.tgToken || "").trim() || String(sec.tgChat || "").trim()) return true;
+  if (sec.tgChannels && typeof sec.tgChannels === "object" && !Array.isArray(sec.tgChannels)) {
+    for (const v of Object.values(sec.tgChannels)) {
+      if (String(v || "").trim()) return true;
+    }
+  }
   if (String(sec.workerUrl || "").trim() || String(sec.workerSecret || "").trim()) return true;
   if (String(sec.adminCode || "").trim()) return true;
   return false;
@@ -21751,6 +21756,20 @@ app.post("/api/admin/secrets/import", admin, async (req, res) => {
   }
   if (typeof obj.tgChat === "string") {
     updates.tgChat = normalizeTgChat(obj.tgChat);
+    tgCooldownUntil = 0;
+    tgLastStatus = { ok: true };
+  }
+  if (obj.tgChannels && typeof obj.tgChannels === "object" && !Array.isArray(obj.tgChannels)) {
+    const chMap: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj.tgChannels)) {
+      const key = String(k || "").trim().toLowerCase();
+      if (!key) continue;
+      chMap[key] = normalizeTgChat(v);
+    }
+    updates.tgChannels = chMap;
+    if (updates.tgChat === undefined && chMap.matchtv) {
+      updates.tgChat = chMap.matchtv;
+    }
     tgCooldownUntil = 0;
     tgLastStatus = { ok: true };
   }

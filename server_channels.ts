@@ -371,16 +371,19 @@ export function createChannelsController(ctx: ChannelsServerContext) {
     return out;
   }
 
-  function resolveChannelCredentials(channelId: ChannelId): { token: string; chatId: string; usesGlobalToken: boolean; usesGlobalChat: boolean } {
+  function resolveChannelCredentials(channelId: ChannelId): { token: string; chatId: string; usesGlobalToken: boolean; usesGlobalChat: boolean; usesSecretsChat: boolean } {
     const sec = ctx.readSecretsFile() || {};
     const tokenMap = sec.tgChannelTokens && typeof sec.tgChannelTokens === "object" ? sec.tgChannelTokens : {};
     const customToken = String(tokenMap[channelId] || "").trim();
     const globalToken = ctx.getGlobalTgToken();
     const token = customToken && !customToken.includes("•") ? customToken : globalToken;
 
+    const secChannels = sec.tgChannels && typeof sec.tgChannels === "object" ? sec.tgChannels : {};
+    const secChat = ctx.normalizeTgChat(secChannels[channelId] || "");
+
     const specs = getChannelSpecs();
     const cfg = specs[channelId];
-    let chatId = cfg?.chatId || "";
+    let chatId = secChat || cfg?.chatId || "";
     let usesGlobalChat = false;
     if (channelId === "matchtv" && !chatId) {
       chatId = ctx.getGlobalTgChat();
@@ -391,6 +394,7 @@ export function createChannelsController(ctx: ChannelsServerContext) {
       chatId,
       usesGlobalToken: !(customToken && !customToken.includes("•")),
       usesGlobalChat,
+      usesSecretsChat: !!secChat,
     };
   }
 
@@ -1912,8 +1916,10 @@ export function createChannelsController(ctx: ChannelsServerContext) {
         const creds = resolveChannelCredentials(id);
         return {
           ...cfg,
+          chatId: cfg.chatId || (creds.usesSecretsChat ? creds.chatId : ""),
           effectiveChatId: creds.chatId,
           usesGlobalChat: creds.usesGlobalChat,
+          usesSecretsChat: creds.usesSecretsChat,
           hasToken: !!creds.token,
           usesGlobalToken: creds.usesGlobalToken,
           tokenMasked: customTok ? `••••${customTok.slice(-4)}` : "",
@@ -1994,7 +2000,18 @@ export function createChannelsController(ctx: ChannelsServerContext) {
       const cur = db.settings.tgChannels[id];
 
       if (typeof req.body?.enabled === "boolean") cur.enabled = req.body.enabled;
-      if (typeof req.body?.chatId === "string") cur.chatId = ctx.normalizeTgChat(req.body.chatId);
+      if (typeof req.body?.chatId === "string") {
+        cur.chatId = ctx.normalizeTgChat(req.body.chatId);
+        const secCur = ctx.readSecretsFile() || {};
+        if (secCur.tgChannels && typeof secCur.tgChannels === "object") {
+          ctx.saveSecretsFile({
+            tgChannels: {
+              ...secCur.tgChannels,
+              [id]: cur.chatId,
+            },
+          });
+        }
+      }
       if (typeof req.body?.botUsername === "string" && id === "personal_bot") {
         const bu = req.body.botUsername.trim();
         cur.botUsername = bu ? (bu.startsWith("@") ? bu : `@${bu}`) : "@RPLVIRT_bot";
