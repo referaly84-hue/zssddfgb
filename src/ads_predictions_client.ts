@@ -1458,7 +1458,6 @@ export async function runAdsgramBlock(
   const onStart = () => {
     clickArmedAt = Math.min(clickArmedAt, Date.now() + 250);
   };
-  const onSdkClick = () => markClick('sdk_onClick');
   const onBannerNotFound = () => {
     bannerNotFound = true;
     eventError = 'Реклама Adsgram сейчас не подобрана для показа. Попробуйте чуть позже.';
@@ -1548,7 +1547,6 @@ export async function runAdsgramBlock(
   try {
     if (typeof controller?.addEventListener === 'function') {
       controller.addEventListener('onStart', onStart);
-      controller.addEventListener('onClick', onSdkClick);
       controller.addEventListener('onBannerNotFound', onBannerNotFound);
       controller.addEventListener('onError', onError);
       controller.addEventListener('onSkip', onSkip);
@@ -1564,7 +1562,6 @@ export async function runAdsgramBlock(
     try {
       if (typeof controller?.removeEventListener === 'function') {
         controller.removeEventListener('onStart', onStart);
-        controller.removeEventListener('onClick', onSdkClick);
         controller.removeEventListener('onBannerNotFound', onBannerNotFound);
         controller.removeEventListener('onError', onError);
         controller.removeEventListener('onSkip', onSkip);
