@@ -10033,6 +10033,7 @@ async function pgClub(app) {
           ${e(r.venueText)}${r.venue === 'neutral' ? ` (${e(r.stadium)}${r.city ? ', ' + e(r.city) : ''})` : ''} · ${r.nationalType ? '📺 <b>100 просмотров рекламы</b>' : '💶 <b>' + e(r.formattedBudget) + '</b>'}
         </div>
         <div class="small">Условия: ${e(r.conditions)}</div>
+        ${r.subRules ? `<div class="small" style="margin-top:3px">🔄 Замены: <b>${e(r.subRules.label)}</b></div>` : ''}
         <div class="muted small" style="margin-top:4px">${r.intraSquad ? `Внутрикомандный спарринг · Админ: ${appr(r.adminApproval)} · клуб-соперник не требуется` : `Админ: ${appr(r.adminApproval)}${r.needOpponentApproval ? ` · «${e(r.opponentName)}»: ${appr(r.opponentApproval)}` : ` · ${e(r.opponentCompName)}: решает только админ`}`}</div>
         ${r.rejectReason && r.status !== 'approved' ? `<div class="small" style="color:#991b1b;margin-top:4px">${e(r.rejectReason)}</div>` : ''}
         <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
@@ -10099,7 +10100,20 @@ async function pgClub(app) {
           <label class="small" style="flex:1;min-width:160px">Реальная дата (МСК)<br><input type="date" id="nt_real_date" style="width:100%"></label>
           <label class="small" style="width:120px">Реальное время (МСК)<br><input type="time" id="nt_real_time" value="19:00" style="width:100%"></label>
         </div>
-        <label class="small" style="display:block;margin-top:10px">Условия матча (необязательно)<br><textarea id="nt_cond" rows="2" maxlength="500" style="width:100%;max-width:560px" placeholder="Например: 2 тайма по 45 минут, до 6 замен"></textarea></label>
+        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+          <label class="small" style="flex:1;min-width:220px;max-width:340px">Формат замен<br>
+            <select id="nt_subs_mode" style="width:100%">
+              <option value="auto">По тексту условий (по умолчанию 5 / 3 окна)</option>
+              <option value="standard">Стандарт: до 5 замен (3 окна)</option>
+              <option value="6_3">До 6 замен (3 окна)</option>
+              <option value="7_4">До 7 замен (4 окна)</option>
+              <option value="10_free">До 10 замен (окна без ограничений)</option>
+              <option value="unlimited">Неограниченное количество замен</option>
+              <option value="none">Без замен</option>
+            </select>
+          </label>
+        </div>
+        <label class="small" style="display:block;margin-top:10px">Условия матча (необязательно)<br><textarea id="nt_cond" rows="2" maxlength="500" style="width:100%;max-width:560px" placeholder="Например: 2 тайма по 45 минут, неограниченное количество замен"></textarea></label>
         <div id="nt_hint" class="muted small" style="margin-top:6px"></div>
         <button type="button" class="btn" id="nt_send" style="margin-top:8px" ${ntAds.ready ? '' : 'disabled'}>Подать заявку (спишется ${ntAds.required} просмотров)</button>
         ` : '<div class="muted small" style="margin-top:8px">Сборные пока недоступны.</div>'}
@@ -10154,7 +10168,20 @@ async function pgClub(app) {
             <button type="button" class="btn sm alt" data-intra-rt="21:00">21:00</button>
           </div>
         </div>
-        <label class="small" style="display:block;margin-top:8px">Заметка к спаррингу (необязательно)<br><textarea id="intra_cond" rows="2" maxlength="500" style="width:100%;max-width:560px" placeholder="Например: Двусторонка 11 на 11: проверка резерва и новых сочетаний"></textarea></label>
+        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+          <label class="small" style="flex:1;min-width:220px;max-width:340px">Формат замен<br>
+            <select id="intra_subs_mode" style="width:100%">
+              <option value="auto">По тексту заметки (по умолчанию 5 / 3 окна)</option>
+              <option value="standard">Стандарт: до 5 замен (3 окна)</option>
+              <option value="6_3">До 6 замен (3 окна)</option>
+              <option value="7_4">До 7 замен (4 окна)</option>
+              <option value="10_free">До 10 замен (окна без ограничений)</option>
+              <option value="unlimited">Неограниченное количество замен</option>
+              <option value="none">Без замен</option>
+            </select>
+          </label>
+        </div>
+        <label class="small" style="display:block;margin-top:8px">Заметка к спаррингу (необязательно)<br><textarea id="intra_cond" rows="2" maxlength="500" style="width:100%;max-width:560px" placeholder="Например: Двусторонка 11 на 11: проверка резерва, неограниченное количество замен"></textarea></label>
         <div id="intra_ad_quota" class="small" style="margin-top:6px;color:var(--deep);font-weight:600"></div>
         <button type="button" class="btn" id="intra_send" ${(intraReady && !frInCd) ? '' : 'disabled'} style="margin-top:8px;font-variant-numeric:tabular-nums">${frInCd ? `<span data-fr-cd="${frCdTarget}">Перерыв ${fmtFrCd(frCdTarget - nowFr)}</span>` : '⚽ Подать заявку на спарринг (большая реклама + клик)'}</button>` : '<div class="muted small">Ближайших пауз на сборные в календаре нет — назначить спарринг можно только во время паузы на сборные.</div>'}
       </div>`;
@@ -10173,6 +10200,7 @@ async function pgClub(app) {
             </div>
             <div class="small" style="margin:4px 0">💶 Бюджет матча: <b>${e(r.formattedBudget)}</b> (получит ваш клуб)</div>
             <div class="small">Условия: ${e(r.conditions)}</div>
+            ${r.subRules ? `<div class="small" style="margin-top:3px">🔄 Замены: <b>${e(r.subRules.label)}</b></div>` : ''}
             <div class="row" style="gap:8px;margin-top:8px">
               <button class="btn" data-fr-ok="${r.id}" ${frInCd ? 'disabled' : ''} style="font-variant-numeric:tabular-nums">${frInCd ? `<span data-fr-cd="${frCdTarget}">Перерыв ${fmtFrCd(frCdTarget - nowFr)}</span>` : 'Принять'}</button>
               <button class="btn sm" data-fr-no="${r.id}">Отклонить</button>
@@ -10223,7 +10251,20 @@ async function pgClub(app) {
           <div class="muted small" style="margin-top:4px">Реальное московское время проведения матча или стрима трансляции.</div>
         </div>
 
-        <label class="small" style="display:block;margin-top:10px">Условия матча<br><textarea id="fr_cond" rows="2" maxlength="500" style="width:100%;max-width:560px" placeholder="Например: 2 тайма по 45 минут, до 6 замен, смешанный состав"></textarea></label>
+        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+          <label class="small" style="flex:1;min-width:220px;max-width:340px">Формат замен<br>
+            <select id="fr_subs_mode" style="width:100%">
+              <option value="auto">По тексту условий (по умолчанию 5 / 3 окна)</option>
+              <option value="standard">Стандарт: до 5 замен (3 окна)</option>
+              <option value="6_3">До 6 замен (3 окна)</option>
+              <option value="7_4">До 7 замен (4 окна)</option>
+              <option value="10_free">До 10 замен (окна без ограничений)</option>
+              <option value="unlimited">Неограниченное количество замен</option>
+              <option value="none">Без замен</option>
+            </select>
+          </label>
+        </div>
+        <label class="small" style="display:block;margin-top:10px">Условия матча<br><textarea id="fr_cond" rows="2" maxlength="500" style="width:100%;max-width:560px" placeholder="Например: 2 тайма по 45 минут, неограниченное количество замен, смешанный состав"></textarea></label>
         <div class="row" style="gap:8px;margin-top:8px;align-items:flex-end;flex-wrap:wrap">
           <label class="small">Бюджет матча, €<br><input type="number" id="fr_budget" min="1" step="10000" placeholder="500000"></label>
           <button type="button" class="btn sm" data-fr-b="250000">250 тыс.</button><button type="button" class="btn sm" data-fr-b="500000">500 тыс.</button><button type="button" class="btn sm" data-fr-b="1000000">1 млн</button>
@@ -10330,6 +10371,7 @@ async function pgClub(app) {
             gameTime: q('#nt_time').value,
             realDate: q('#nt_real_date').value,
             realTime: q('#nt_real_time').value,
+            subFormat: q('#nt_subs_mode')?.value || 'auto',
             conditions: q('#nt_cond').value
           })), 'Заявка на матч со сборной отправлена');
           if (r) pgClub(app);
@@ -10414,6 +10456,7 @@ async function pgClub(app) {
           gameTime: iq('#intra_time')?.value,
           realDate: iq('#intra_real_date')?.value,
           realTime: iq('#intra_real_time')?.value,
+          subFormat: iq('#intra_subs_mode')?.value || 'auto',
           conditions: iq('#intra_cond')?.value,
           adProof: adRes.adProof
         })), d => d?.message || 'Заявка на спарринг отправлена администратору');
@@ -10468,6 +10511,7 @@ async function pgClub(app) {
           realTime: $('#fr_real_time').value,
           date: $('#fr_date').value,
           time: $('#fr_time').value,
+          subFormat: $('#fr_subs_mode')?.value || 'auto',
           conditions: $('#fr_cond').value,
           budget: +$('#fr_budget').value,
           adProof: adRes.adProof
@@ -11824,6 +11868,11 @@ async function pgClub(app) {
     const openBtnLabel = lockInfo.locked
       ? (isIntra ? '👁️ Посмотреть составы и тактику' : '👁️ Посмотреть состав и тактику')
       : (isIntra ? 'Настроить оба состава (11 на 11), схемы и тактику' : 'Настроить состав, тактику и тренировки');
+    const subRulesCard = resolveClientMatchSubRules(f);
+    const isFriendlyCard = f.comp === 'friendly_match' || f.comp === 'friendly' || isIntra;
+    const subFormatLine = isFriendlyCard
+      ? `<div class="muted small" style="margin-top:6px">🔄 <b>Формат замен:</b> ${e(subRulesCard.label)}${(f.friendlyConditions || f.note) ? ` · <i>${e(f.friendlyConditions || f.note)}</i>` : ''}</div>`
+      : '';
     return `<div class="panel" data-f="${f.id}">
       <div class="row sp">
         <div class="t-cell" style="align-items:flex-start">
@@ -11835,6 +11884,7 @@ async function pgClub(app) {
         </div>
         <span>${isIntra ? '<span class="tag" style="background:#f0fdf4;color:#15803d;border-color:#86efac">спарринг</span> ' : ''}${f.derby ? '<span class="tag derby">дерби</span> ' : ''}${f.rivalry ? '<span class="tag" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd">принципиальный</span> ' : ''}${statusBadge}${logStatusBadge}${lockBadgeHtml}</span>
       </div>
+      ${subFormatLine}
       ${bonusStripHtml}
       ${(f.techRisk || []).length ? `<div style="margin-top:8px;font-size:12.5px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:6px 12px">⚠ Недостаточно доступных игроков в заявке: ${f.techRisk.map(e).join('; ')}.</div>` : ''}
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -11957,6 +12007,81 @@ async function pgClub(app) {
       });
     });
   });
+}
+
+const CLIENT_SUB_PRESETS = {
+  standard: { mode: 'standard', maxSubs: 5, maxWindows: 3, maxBench: 12, label: 'до 5 замен в 3 окна' },
+  '6_3': { mode: '6_3', maxSubs: 6, maxWindows: 3, maxBench: 15, label: 'до 6 замен в 3 окна' },
+  '7_4': { mode: '7_4', maxSubs: 7, maxWindows: 4, maxBench: 16, label: 'до 7 замен в 4 окна' },
+  '10_free': { mode: '10_free', maxSubs: 10, maxWindows: null, maxBench: 20, label: 'до 10 замен (окна без ограничений)' },
+  unlimited: { mode: 'unlimited', maxSubs: null, maxWindows: null, maxBench: 25, label: 'неограниченное количество замен' },
+  none: { mode: 'none', maxSubs: 0, maxWindows: 0, maxBench: 12, label: 'без замен' }
+};
+function formatClientSubRulesLabel(maxSubs, maxWindows) {
+  if (maxSubs === 0) return 'без замен';
+  const subsPart = maxSubs == null ? 'неограниченное количество замен' : `до ${maxSubs} замен`;
+  if (maxSubs == null && maxWindows == null) return 'неограниченное количество замен (окна без ограничений)';
+  const winPart = maxWindows == null ? 'окна без ограничений' : `в ${maxWindows} ${maxWindows === 1 ? 'окно' : (maxWindows >= 2 && maxWindows <= 4 ? 'окна' : 'окон')}`;
+  return `${subsPart} (${winPart})`;
+}
+function resolveClientMatchSubRules(f) {
+  if (f && f.subRules && typeof f.subRules === 'object') {
+    const r = f.subRules;
+    return {
+      mode: r.mode || 'standard',
+      maxSubs: r.maxSubs === undefined ? 5 : r.maxSubs,
+      maxWindows: r.maxWindows === undefined ? 3 : r.maxWindows,
+      maxBench: Number(r.maxBench) || 12,
+      unlimitedSubs: r.maxSubs === null,
+      unlimitedWindows: r.maxWindows === null,
+      isCustom: !!r.isCustom,
+      label: r.label || formatClientSubRulesLabel(r.maxSubs, r.maxWindows)
+    };
+  }
+  const make = (mode, maxSubs, maxWindows, maxBench, isCustom, label) => ({
+    mode,
+    maxSubs,
+    maxWindows,
+    maxBench: Math.max(12, maxBench || 12),
+    unlimitedSubs: maxSubs === null,
+    unlimitedWindows: maxWindows === null,
+    isCustom: !!isCustom,
+    label: label || formatClientSubRulesLabel(maxSubs, maxWindows)
+  });
+  const comp = String(f?.comp || '').trim().toLowerCase();
+  const isFriendlyLike = comp === 'friendly_match' || comp === 'friendly' || comp === 'intra_squad' || !!f?.intraSquad || !!f?.friendlyId;
+  if (!isFriendlyLike) return make('standard', 5, 3, 12, false, CLIENT_SUB_PRESETS.standard.label);
+  const exp = String(f?.friendlySubFormat || f?.subFormat || '').trim().toLowerCase();
+  if (exp && exp !== 'auto' && CLIENT_SUB_PRESETS[exp]) {
+    const p = CLIENT_SUB_PRESETS[exp];
+    return make(p.mode, p.maxSubs, p.maxWindows, p.maxBench, exp !== 'standard', p.label);
+  }
+  const text = String(f?.friendlyConditions || f?.conditions || f?.note || '').toLowerCase().replace(/ё/g, 'е');
+  if (!text) return make('standard', 5, 3, 12, false, CLIENT_SUB_PRESETS.standard.label);
+  const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const noSubsRe = /(?:без\s+замен|замен\s+нет|\b0\s*замен|без\s+права\s+на\s+замен)/i;
+  const unlimSubsRe = /(?:неограниченн[а-я]*\s+(?:количеств[а-я]*\s+|числ[а-я]*\s+)?замен|замен[аы]?\s+(?:не\s+ограничен[а-я]*|без\s+ограничени[йя]|без\s+лимита|безлимит)|без\s+(?:всяких\s+)?ограничени[йя]\s+(?:по\s+|на\s+)?замен|без\s+лимит[а]?\s+(?:по\s+|на\s+)?замен|безлимит[а-я]*\s+(?:по\s+|на\s+)?замен|(?:любое|сколько\s+угодно)\s+(?:количество\s+|число\s+)?замен|свободн(?:ые|ых)\s+замен|обратн(?:ые|ых)\s+замен|∞\s*замен|замен\s*[:-]?\s*∞)/i;
+  const genericUnlimRe = /(?:\bбез\s+ограничений\b|\bбез\s+лимита\b|\bбезлимит\b|\bнеограниченн(?:ое|о|ые|ых)?\b)/i;
+  const numSubMatch = text.match(/(?:до|максимум|не\s+более)?\s*(\d{1,2})\s*замен[аы]?/i) || text.match(/замен[аы]?\s*[:-]?\s*(\d{1,2})/i);
+  const unlimWinRe = /(?:окн[ао]\s+без\s+ограничени|без\s+ограничени[йя]\s+(?:по\s+)?(?:окн|слот)|без\s+ок[о]?н|без\s+лимит[а]?\s+(?:по\s+)?(?:окнам|слотам)|любое\s+(?:число|количество)\s+(?:окон|слотов)|неограниченн[а-я]*\s+(?:числ[а-я]*\s+|количеств[а-я]*\s+)?(?:окон|слотов))/i;
+  const numWinMatch = text.match(/(?:до|максимум|в)?\s*(\d{1,2})\s*(?:окн[ао]?|окон|слот[аов]*)/i);
+  if (unlimSubsRe.test(text) || (genericUnlimRe.test(text) && !numSubMatch && !noSubsRe.test(text) && !/только\s+по\s+окнам/i.test(text))) {
+    const win = numWinMatch ? clampN(Number(numWinMatch[1]), 1, 25) : null;
+    return make('unlimited', null, win, 25, true);
+  }
+  if (noSubsRe.test(text)) return make('none', 0, 0, 12, true, 'без замен');
+  if (numSubMatch) {
+    const maxSubs = clampN(Number(numSubMatch[1]), 0, 25);
+    const maxWindows = unlimWinRe.test(text) ? null : numWinMatch ? clampN(Number(numWinMatch[1]), 1, 25) : (maxSubs === 0 ? 0 : (maxSubs > 5 ? null : Math.min(3, maxSubs)));
+    const maxBench = maxSubs > 5 ? Math.min(25, Math.max(15, maxSubs + 5)) : 12;
+    const isCustom = maxSubs !== 5 || maxWindows !== 3;
+    return make(isCustom ? 'custom' : 'standard', maxSubs, maxWindows, maxBench, isCustom);
+  }
+  if (unlimWinRe.test(text) || numWinMatch) {
+    const maxWindows = unlimWinRe.test(text) ? null : clampN(Number(numWinMatch[1]), 1, 25);
+    return make(maxWindows !== 3 ? 'custom' : 'standard', 5, maxWindows, 12, maxWindows !== 3);
+  }
+  return make('standard', 5, 3, 12, false, CLIENT_SUB_PRESETS.standard.label);
 }
 
 const ROLE_DEFS = [
@@ -12176,7 +12301,8 @@ function lineupForm(box, f, c, withT, app) {
   const presets = Array.isArray(c.tacticPresets) ? c.tacticPresets : [];
   const order = { ВР: 0, ЛЗ: 1, ЦЗ: 2, ПЗ: 3, ЛП: 4, ОП: 5, ЦП: 6, АП: 7, ПП: 8, ЛВ: 9, ЦФ: 10, ПВ: 11 };
   const sq = [...c.squad].sort((a, b) => (order[a.pos] ?? 6) - (order[b.pos] ?? 6));
-  const isFriendlyComp = f.comp === 'friendly' || f.comp === 'friendly_match' || f.isIntraSquad;
+  const isFriendlyComp = f.comp === 'friendly' || f.comp === 'friendly_match' || f.isIntraSquad || f.intraSquad;
+  const subRules = resolveClientMatchSubRules(f);
   const isRpl = !isFriendlyComp && (f.comp === 'rpl' || f.comp === 'fnl' || f.comp === 'cup' || f.comp === 'supercup' || c.team.comp === 'rpl' || c.team.comp === 'fnl');
   const limit = c.legionLimit || { inSquad: 12, onPitch: 7, label: '12+7' };
   const fFatMap = isAdmin ? (f.fatigueByPid || {}) : {};
@@ -12253,9 +12379,10 @@ function lineupForm(box, f, c, withT, app) {
       : '');
 
   box.innerHTML = `<div class="lineup-lock-notice" style="display:none;margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12.5px;font-weight:600">🔒 До начала матча осталось менее 10 минут — вносить правки в состав и тактику уже нельзя (доступен только просмотр).</div>
+  ${(isFriendlyComp || subRules.isCustom) ? `<div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:12.5px">🔄 <b>Формат замен в этом матче:</b> ${e(subRules.label)}${(f.friendlyConditions || f.note) ? ` · <span class="muted">${e(f.friendlyConditions || f.note)}</span>` : ''}</div>` : ''}
   <label>Схема</label><input class="fm" value="${e(L.formation || '4-3-3')}" style="max-width:140px">
   <div class="row sp" style="gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 6px">
-    <label style="margin:0">Состав: выберите 11 в старт и до 9 на скамейку <span class="muted small" data-cnt></span></label>
+    <label style="margin:0">Состав: выберите 11 в старт и до ${subRules.maxBench > 12 ? subRules.maxBench : 9} на скамейку <span class="muted small" data-cnt></span></label>
     <button type="button" class="btn sm alt reset-lineup-btn" title="Снять всех игроков со старта и скамейки">🧹 Сбросить состав</button>
   </div>
   ${unavailNotice}
@@ -12496,7 +12623,7 @@ function lineupForm(box, f, c, withT, app) {
   };
 
   const getNormalizedPlannedSubs = (sPids, bPids) => {
-    if (sPids.length < 11 || !bPids.length) return [];
+    if (sPids.length < 11 || !bPids.length || subRules.maxSubs === 0) return [];
     const sSet = new Set(sPids);
     const bSet = new Set(bPids);
     const validSubs = [];
@@ -12507,7 +12634,7 @@ function lineupForm(box, f, c, withT, app) {
       .map((item, origIdx) => ({ ...item, origIdx }))
       .sort((a, b) => a.minute - b.minute || a.origIdx - b.origIdx);
     for (const ps of sorted) {
-      if (validSubs.length >= 5) break;
+      if (subRules.maxSubs != null && validSubs.length >= subRules.maxSubs) break;
       if (!ps.outPid || !ps.inPid || ps.outPid === ps.inPid) continue;
       if (!bSet.has(ps.inPid) || usedIn.has(ps.inPid)) continue;
       if (!onPitch.has(ps.outPid) || usedOut.has(ps.outPid)) continue;
@@ -12625,9 +12752,17 @@ function lineupForm(box, f, c, withT, app) {
   const renderSubsEditor = () => {
     const wrap = box.querySelector('#subs_editor');
     if (!wrap) return;
+    const subCapTxt = subRules.maxSubs == null ? '∞' : String(subRules.maxSubs);
+    const winCapTxt = subRules.maxWindows == null ? '∞' : String(subRules.maxWindows);
+    if (subRules.maxSubs === 0) {
+      currentPlannedSubs = [];
+      wrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены на матч (без замен)</div><div class="muted small">По условиям этого матча замены отключены.</div>`;
+      cnt();
+      return;
+    }
     const { sPids, bPids } = getSelected();
     if (sPids.length < 11 || bPids.length === 0) {
-      wrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены на матч (до 5 замен в 3 слота)</div><div class="muted small">Чтобы поставить замены, выберите 11 игроков в стартовый состав и хотя бы 1 игрока на скамейку.</div>`;
+      wrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены на матч (${e(subRules.label)})</div><div class="muted small">Чтобы поставить замены, выберите 11 игроков в стартовый состав и хотя бы 1 игрока на скамейку.</div>`;
       cnt();
       return;
     }
@@ -12638,7 +12773,7 @@ function lineupForm(box, f, c, withT, app) {
     for (const tSec of validSubs.map(x => x.minute * 60).sort((a, b) => a - b)) {
       if (!distinctTimes.length || tSec - distinctTimes[distinctTimes.length - 1] > 90) distinctTimes.push(tSec);
     }
-    const tooManyWindows = distinctTimes.length > 3;
+    const tooManyWindows = subRules.maxWindows != null && distinctTimes.length > subRules.maxWindows;
     const subSim = simulateSubsLegionClient(validSubs, sPids);
     const hasLegSubChange = isRpl && validSubs.some((_, k) => (subSim.rowStates[k]?.delta || 0) !== 0);
 
@@ -12682,16 +12817,16 @@ function lineupForm(box, f, c, withT, app) {
 
     const availBenchForNew = bPids.filter(pid => !validSubs.some(x => x.inPid === pid));
     const availOutForNew = sPids.filter(pid => !validSubs.some(x => x.outPid === pid) && poolById[pid]?.pos !== 'ВР');
-    const canAdd = validSubs.length < 5 && availBenchForNew.length > 0 && (availOutForNew.length > 0 || sPids.some(pid => !validSubs.some(x => x.outPid === pid)));
+    const canAdd = (subRules.maxSubs == null || validSubs.length < subRules.maxSubs) && availBenchForNew.length > 0 && (availOutForNew.length > 0 || sPids.some(pid => !validSubs.some(x => x.outPid === pid)));
 
     wrap.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-        <div style="font-weight:700;font-size:13px">🔄 Плановые замены на матч (${validSubs.length}/5 · слотов: ${distinctTimes.length}/3)</div>
+        <div style="font-weight:700;font-size:13px">🔄 Плановые замены на матч (${validSubs.length}/${subCapTxt} · слотов: ${distinctTimes.length}/${winCapTxt})</div>
         <button type="button" class="btn sm alt" id="add_sub_btn" ${canAdd ? '' : 'disabled'} style="font-size:11.5px;padding:3px 10px">+ Добавить замену</button>
       </div>
-      <div class="muted small" style="margin-bottom:${validSubs.length ? '6px' : '0'}">Укажите минуту, кого заменить и при каком счёте проводить замену. На одну и ту же минуту можно поставить несколько замен (одно окно).</div>
+      <div class="muted small" style="margin-bottom:${validSubs.length ? '6px' : '0'}">${subRules.unlimitedSubs ? 'Укажите минуту, кого заменить и при каком счёте проводить замену (число замен и окон не ограничено).' : 'Укажите минуту, кого заменить и при каком счёте проводить замену. На одну и ту же минуту можно поставить несколько замен (одно окно).'}</div>
       ${rowsHtml ? `<div>${rowsHtml}</div>` : ''}
-      ${tooManyWindows ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⚠ Превышено число окон замен (${distinctTimes.length} из 3):</b> по правилам допускается максимум 3 остановки для замен (5 игроков). Объедините часть замен на одну минуту.</div>` : ''}
+      ${tooManyWindows ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⚠ Превышено число окон замен (${distinctTimes.length} из ${subRules.maxWindows}):</b> по правилам этого матча допускается максимум ${subRules.maxWindows} ${subRules.maxWindows === 1 ? 'остановка' : 'остановки'} для замен. Объедините часть замен на одну минуту.</div>` : ''}
       ${isRpl && subSim.issues.length ? `<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⛔ Превышен лимит легионеров при заменах (максимум ${limit.onPitch} на поле):</b> ${e(subSim.issues.join('; '))}. Сначала выпустите игрока РФ/ЕАЭС вместо легионера либо объедините встречные замены на одну минуту с тем же условием.</div>` : ''}
       ${isRpl && !subSim.issues.length && hasLegSubChange ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;font-size:12px"><b>✅ Лимит легионеров при заменах соблюдён:</b> одновременно на поле не более ${subSim.maxLeg} из ${limit.onPitch} легионеров.</div>` : ''}
     `;
@@ -13060,6 +13195,7 @@ function lineupForm(box, f, c, withT, app) {
 
 function intraLineupForm(box, f, c, withT, app) {
   const isAdmin = S.me?.role === 'admin';
+  const subRules = resolveClientMatchSubRules(f);
   const presets = Array.isArray(c.tacticPresets) ? c.tacticPresets : [];
   const hLbl = f.homeLabel || 'Основа';
   const aLbl = f.awayLabel || 'Запас';
@@ -13160,6 +13296,7 @@ function intraLineupForm(box, f, c, withT, app) {
 
   box.innerHTML = `
     <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+      <div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:12.5px">🔄 <b>Формат замен спарринга:</b> ${e(subRules.label)}${(f.friendlyConditions || f.note) ? ` · <span class="muted">${e(f.friendlyConditions || f.note)}</span>` : ''}</div>
       <div class="row sp" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <div id="intra_summary_bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
@@ -13400,14 +13537,19 @@ function intraLineupForm(box, f, c, withT, app) {
     const subsWrap = box.querySelector('#intra_subs_editor');
     if (subsWrap) {
       const sSet = new Set(sPids), bSet = new Set(bPids);
-      if (sPids.length < 11 || bPids.length === 0) {
-        subsWrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены — ${e(sideLabel)}</div><div class="muted small">Нужно 11 игроков старта и минимум 1 запасной у «${e(sideLabel)}».</div>`;
+      const subCapTxt = subRules.maxSubs == null ? '∞' : String(subRules.maxSubs);
+      const winCapTxt = subRules.maxWindows == null ? '∞' : String(subRules.maxWindows);
+      if (subRules.maxSubs === 0) {
+        stSide.plannedSubs = [];
+        subsWrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены — ${e(sideLabel)} (без замен)</div><div class="muted small">По условиям этого спарринга замены отключены.</div>`;
+      } else if (sPids.length < 11 || bPids.length === 0) {
+        subsWrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены — ${e(sideLabel)} (${e(subRules.label)})</div><div class="muted small">Нужно 11 игроков старта и минимум 1 запасной у «${e(sideLabel)}».</div>`;
       } else {
         const validSubs = [];
         const usedIn = new Set(), usedOut = new Set(), onPitch = new Set(sSet);
         const sorted = stSide.plannedSubs.map((x, idx) => ({ ...x, origIdx: idx })).sort((a, b) => a.minute - b.minute || a.origIdx - b.origIdx);
         for (const ps of sorted) {
-          if (validSubs.length >= 5) break;
+          if (subRules.maxSubs != null && validSubs.length >= subRules.maxSubs) break;
           if (!ps.outPid || !ps.inPid || ps.outPid === ps.inPid) continue;
           if (!bSet.has(ps.inPid) || usedIn.has(ps.inPid)) continue;
           if (!onPitch.has(ps.outPid) || usedOut.has(ps.outPid)) continue;
@@ -13415,10 +13557,15 @@ function intraLineupForm(box, f, c, withT, app) {
           validSubs.push({ minute: ps.minute, outPid: ps.outPid, inPid: ps.inPid, condition: ps.condition || 'always' });
         }
         stSide.plannedSubs = validSubs;
-        const canAdd = validSubs.length < 5 && bPids.some(pid => !validSubs.some(x => x.inPid === pid));
+        const distinctTimes = [];
+        for (const tSec of validSubs.map(x => x.minute * 60).sort((a, b) => a - b)) {
+          if (!distinctTimes.length || tSec - distinctTimes[distinctTimes.length - 1] > 90) distinctTimes.push(tSec);
+        }
+        const tooManyWindows = subRules.maxWindows != null && distinctTimes.length > subRules.maxWindows;
+        const canAdd = (subRules.maxSubs == null || validSubs.length < subRules.maxSubs) && bPids.some(pid => !validSubs.some(x => x.inPid === pid));
         subsWrap.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-            <div style="font-weight:700;font-size:13px">🔄 Плановые замены — ${e(sideLabel)} (${validSubs.length}/5)</div>
+            <div style="font-weight:700;font-size:13px">🔄 Плановые замены — ${e(sideLabel)} (${validSubs.length}/${subCapTxt} · слотов: ${distinctTimes.length}/${winCapTxt})</div>
             <button type="button" class="btn sm alt" id="intra_add_sub" ${canAdd ? '' : 'disabled'} style="font-size:11.5px;padding:3px 10px">+ Добавить замену</button>
           </div>
           ${validSubs.map((ps, idx) => {
@@ -13432,7 +13579,8 @@ function intraLineupForm(box, f, c, withT, app) {
               <select class="intra-sub-cond" data-sub-idx="${idx}" style="min-width:130px">${condOpts}</select>
               <button type="button" class="btn sm alt intra-sub-del" data-sub-idx="${idx}" style="padding:3px 8px">✕</button>
             </div>`;
-          }).join('')}`;
+          }).join('')}
+          ${tooManyWindows ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⚠ Превышено число окон замен (${distinctTimes.length} из ${subRules.maxWindows}):</b> объедините часть замен на одну минуту.</div>` : ''}`;
         subsWrap.querySelector('#intra_add_sub')?.addEventListener('click', () => {
           const nextIn = bPids.find(pid => !stSide.plannedSubs.some(x => x.inPid === pid));
           const nextOut = sPids.find(pid => !stSide.plannedSubs.some(x => x.outPid === pid) && poolById[pid]?.pos !== 'ВР') || sPids.find(pid => !stSide.plannedSubs.some(x => x.outPid === pid));
@@ -13616,7 +13764,7 @@ function intraLineupForm(box, f, c, withT, app) {
       return {
         formation: fm,
         starters: slotsPayload.length === 11 ? slotsPayload.map(x => x.pid) : sPids,
-        bench: bPids.slice(0, 12),
+        bench: bPids.slice(0, subRules.maxBench),
         slots: slotsPayload.length === 11 ? slotsPayload : undefined,
         roles: stSide.roles,
         plannedSubs: stSide.plannedSubs,

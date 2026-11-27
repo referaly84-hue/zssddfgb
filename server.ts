@@ -582,8 +582,106 @@ function evaluatePlannedSubsLegionLimit(
       : null
   };
 }
-function normalizePlannedSubs(rawSubs: any, starters: string[], bench: string[], opts?: { legionLimitOnPitch?: number | null }) {
+const SUB_FORMAT_PRESETS: Record<string, {
+  mode: string;
+  maxSubs: number | null;
+  maxWindows: number | null;
+  maxBench: number;
+  label: string;
+}> = {
+  standard: { mode: "standard", maxSubs: 5, maxWindows: 3, maxBench: 12, label: "до 5 замен в 3 окна" },
+  "6_3": { mode: "6_3", maxSubs: 6, maxWindows: 3, maxBench: 15, label: "до 6 замен в 3 окна" },
+  "7_4": { mode: "7_4", maxSubs: 7, maxWindows: 4, maxBench: 16, label: "до 7 замен в 4 окна" },
+  "10_free": { mode: "10_free", maxSubs: 10, maxWindows: null, maxBench: 20, label: "до 10 замен (окна без ограничений)" },
+  unlimited: { mode: "unlimited", maxSubs: null, maxWindows: null, maxBench: 25, label: "неограниченное количество замен" },
+  none: { mode: "none", maxSubs: 0, maxWindows: 0, maxBench: 12, label: "без замен" }
+};
+function normalizeSubFormatCode(raw: any): string {
+  const s = String(raw || "").trim().toLowerCase();
+  if (!s || s === "auto") return "auto";
+  if (SUB_FORMAT_PRESETS[s]) return s;
+  return "auto";
+}
+function formatSubRulesLabel(maxSubs: number | null, maxWindows: number | null) {
+  if (maxSubs === 0) return "без замен";
+  const subsPart = maxSubs == null ? "неограниченное количество замен" : `до ${maxSubs} замен`;
+  if (maxSubs == null && maxWindows == null) return "неограниченное количество замен (окна без ограничений)";
+  const winPart = maxWindows == null ? "окна без ограничений" : `в ${maxWindows} ${maxWindows === 1 ? "окно" : (maxWindows >= 2 && maxWindows <= 4 ? "окна" : "окон")}`;
+  return `${subsPart} (${winPart})`;
+}
+function resolveMatchSubRules(target: any) {
+  const makeRes = (mode: string, maxSubs: number | null, maxWindows: number | null, maxBench: number, isCustom: boolean, customLabel?: string) => {
+    const label = customLabel || formatSubRulesLabel(maxSubs, maxWindows);
+    const unlimitedSubs = maxSubs === null;
+    const unlimitedWindows = maxWindows === null;
+    const promptSummary = maxSubs === 0
+      ? "ЗАМЕНЫ ЗАПРЕЩЕНЫ (0 замен в этом матче)."
+      : `${label}${unlimitedWindows ? "" : " (перерыв в окно не считается)"}`;
+    return {
+      mode,
+      maxSubs,
+      maxWindows,
+      maxBench: Math.max(12, maxBench),
+      autoBench: 9,
+      unlimitedSubs,
+      unlimitedWindows,
+      isCustom,
+      label,
+      promptSummary
+    };
+  };
+  const comp = String(target?.comp || "").trim().toLowerCase();
+  const isFriendlyLike = comp === FRIENDLY_COMP || comp === "friendly" || comp === "intra_squad" || !!target?.intraSquad || !!target?.friendlyId || (!comp && target && ("conditions" in target || "subFormat" in target || "friendlySubFormat" in target));
+  if (!isFriendlyLike) {
+    return makeRes("standard", 5, 3, 12, false, SUB_FORMAT_PRESETS.standard.label);
+  }
+  const explicit = normalizeSubFormatCode(target?.friendlySubFormat || target?.subFormat);
+  if (explicit !== "auto" && SUB_FORMAT_PRESETS[explicit]) {
+    const p = SUB_FORMAT_PRESETS[explicit];
+    return makeRes(p.mode, p.maxSubs, p.maxWindows, p.maxBench, explicit !== "standard", p.label);
+  }
+  const text = String(target?.friendlyConditions || target?.conditions || target?.note || "")
+    .toLowerCase()
+    .replace(/ё/g, "е");
+  if (!text) {
+    return makeRes("standard", 5, 3, 12, false, SUB_FORMAT_PRESETS.standard.label);
+  }
+  const noSubsRe = /(?:без\s+замен|замен\s+нет|\b0\s*замен|без\s+права\s+на\s+замен)/i;
+  const unlimSubsRe = /(?:неограниченн[а-я]*\s+(?:количеств[а-я]*\s+|числ[а-я]*\s+)?замен|замен[аы]?\s+(?:не\s+ограничен[а-я]*|без\s+ограничени[йя]|без\s+лимита|безлимит)|без\s+(?:всяких\s+)?ограничени[йя]\s+(?:по\s+|на\s+)?замен|без\s+лимит[а]?\s+(?:по\s+|на\s+)?замен|безлимит[а-я]*\s+(?:по\s+|на\s+)?замен|(?:любое|сколько\s+угодно)\s+(?:количество\s+|число\s+)?замен|свободн(?:ые|ых)\s+замен|обратн(?:ые|ых)\s+замен|∞\s*замен|замен\s*[:-]?\s*∞)/i;
+  const genericUnlimRe = /(?:\bбез\s+ограничений\b|\bбез\s+лимита\b|\bбезлимит\b|\bнеограниченн(?:ое|о|ые|ых)?\b)/i;
+  const numSubMatch = text.match(/(?:до|максимум|не\s+более)?\s*(\d{1,2})\s*замен[аы]?/i) || text.match(/замен[аы]?\s*[:-]?\s*(\d{1,2})/i);
+  const unlimWinRe = /(?:окн[ао]\s+без\s+ограничени|без\s+ограничени[йя]\s+(?:по\s+)?(?:окн|слот)|без\s+ок[о]?н|без\s+лимит[а]?\s+(?:по\s+)?(?:окнам|слотам)|любое\s+(?:число|количество)\s+(?:окон|слотов)|неограниченн[а-я]*\s+(?:числ[а-я]*\s+|количеств[а-я]*\s+)?(?:окон|слотов))/i;
+  const numWinMatch = text.match(/(?:до|максимум|в)?\s*(\d{1,2})\s*(?:окн[ао]?|окон|слот[аов]*)/i);
+
+  if (unlimSubsRe.test(text) || (genericUnlimRe.test(text) && !numSubMatch && !noSubsRe.test(text) && !/только\s+по\s+окнам/i.test(text))) {
+    const win = numWinMatch ? clamp(Number(numWinMatch[1]), 1, 25) : null;
+    return makeRes("unlimited", null, win, 25, true);
+  }
+  if (noSubsRe.test(text)) {
+    return makeRes("none", 0, 0, 12, true, "без замен");
+  }
+  if (numSubMatch) {
+    const maxSubs = clamp(Number(numSubMatch[1]), 0, 25);
+    const maxWindows = unlimWinRe.test(text)
+      ? null
+      : numWinMatch
+        ? clamp(Number(numWinMatch[1]), 1, 25)
+        : (maxSubs === 0 ? 0 : (maxSubs > 5 ? null : Math.min(3, maxSubs)));
+    const maxBench = maxSubs > 5 ? Math.min(25, Math.max(15, maxSubs + 5)) : 12;
+    const isCustom = maxSubs !== 5 || maxWindows !== 3;
+    return makeRes(isCustom ? "custom" : "standard", maxSubs, maxWindows, maxBench, isCustom);
+  }
+  if (unlimWinRe.test(text) || numWinMatch) {
+    const maxWindows = unlimWinRe.test(text) ? null : clamp(Number(numWinMatch![1]), 1, 25);
+    const isCustom = maxWindows !== 3;
+    return makeRes(isCustom ? "custom" : "standard", 5, maxWindows, 12, isCustom);
+  }
+  return makeRes("standard", 5, 3, 12, false, SUB_FORMAT_PRESETS.standard.label);
+}
+function normalizePlannedSubs(rawSubs: any, starters: string[], bench: string[], opts?: { legionLimitOnPitch?: number | null; maxSubs?: number | null }) {
   if (!Array.isArray(rawSubs) || !starters.length || !bench.length) return [];
+  const maxSubs = opts && "maxSubs" in opts ? opts.maxSubs : 5;
+  if (maxSubs === 0) return [];
   const starterSet = new Set(starters);
   const benchSet = new Set(bench);
   const items = rawSubs
@@ -602,7 +700,7 @@ function normalizePlannedSubs(rawSubs: any, starters: string[], bench: string[],
   const usedOut = new Set<string>();
   const onPitchAfterPrior = new Set<string>(starterSet);
   for (const item of items) {
-    if (out.length >= 5) break;
+    if (maxSubs != null && out.length >= maxSubs) break;
     if (!item.outPid || !item.inPid || item.outPid === item.inPid) continue;
     if (!benchSet.has(item.inPid) || usedIn.has(item.inPid)) continue;
     if (!onPitchAfterPrior.has(item.outPid) || usedOut.has(item.outPid)) continue;
@@ -9241,6 +9339,7 @@ function ensureApprovedFriendlyFixtures() {
         friendlyId: r.id,
         friendlyBudget: isIntra ? 0 : Math.round(Number(r.budget) || 0),
         friendlyConditions: r.conditions,
+        friendlySubFormat: r.subFormat || void 0,
         nationalType: r.nationalType || void 0,
         neutralField: place.neutral,
         stadium: place.neutral ? `${place.stadium} (нейтральное поле${place.city ? ", г. " + place.city : ""})` : place.stadium,
@@ -12470,7 +12569,8 @@ function sanitizeLineupForFixture(L: any, tid: string, f: any) {
   const stSet = new Set(starters);
   const slots = Array.isArray(L.slots) ? L.slots.filter((s: any) => s && stSet.has(s.pid)) : void 0;
   const legLimit = getFixtureLegionLimit(f, tid);
-  const plannedSubs = normalizePlannedSubs(L.plannedSubs, starters, bench, { legionLimitOnPitch: legLimit?.onPitch ?? null });
+  const subRules = resolveMatchSubRules(f);
+  const plannedSubs = normalizePlannedSubs(L.plannedSubs, starters, bench, { legionLimitOnPitch: legLimit?.onPitch ?? null, maxSubs: subRules.maxSubs });
   return {
     ...L,
     starters,
@@ -12578,16 +12678,17 @@ function fixLineup(L, tid, f, allowLoan = false, excludePids?: Set<string>) {
       }
     }
   }
+  const subRules = resolveMatchSubRules(f);
   const bench = [];
   for (const id of L.bench || []) {
     if (ok.has(id) && !used.has(id) && !bench.includes(id)) bench.push(id);
   }
   for (const p of avail) {
-    if (bench.length >= 9) break;
+    if (bench.length >= subRules.autoBench) break;
     if (!used.has(p.id) && !bench.includes(p.id)) bench.push(p.id);
   }
   const finalStarters = starters.slice(0, 11);
-  const finalBench = bench.slice(0, 9);
+  const finalBench = bench.slice(0, subRules.maxBench);
   const fm = L.formation || "4-3-3";
   const slotResult = assignFormationSlots(fm, finalStarters, L.slots);
   const orderedStarters = slotResult.entries.length === finalStarters.length
@@ -12596,7 +12697,7 @@ function fixLineup(L, tid, f, allowLoan = false, excludePids?: Set<string>) {
   const allValidIds = new Set([...ownIds, ...loaned.map((p) => p.id)]);
   const rolesSource = (intra && !L.roles) ? {} : db.tactics?.[tid]?.roles;
   const mergedRoles = { ...normalizeRoles(rolesSource, allValidIds), ...normalizeRoles(L.roles, allValidIds) };
-  const plannedSubs = normalizePlannedSubs(L.plannedSubs, orderedStarters, finalBench, { legionLimitOnPitch: limit?.onPitch ?? null });
+  const plannedSubs = normalizePlannedSubs(L.plannedSubs, orderedStarters, finalBench, { legionLimitOnPitch: limit?.onPitch ?? null, maxSubs: subRules.maxSubs });
   return {
     formation: fm,
     starters: orderedStarters,
@@ -12750,8 +12851,10 @@ function getLineup(f, tid, side?: "home" | "away", excludePids?: Set<string>) {
 }
 function motivText(tid, f, displayName?: string) {
   const lbl = displayName || team(tid)?.name;
-  if (isIntraSquad(f)) return `${lbl}: внутренний тренировочный спарринг (матч внутри одного клуба) — турнирных очков нет, игроки хорошо знают друг друга, борьба за место в стартовом составе и проверка тактических связок. ${f.friendlyConditions ? "Условия матча: " + f.friendlyConditions + ". " : ""}`;
-  if (f.comp === FRIENDLY_COMP) return `${lbl}: \u0442\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447 \u0432 \u043F\u0430\u0443\u0437\u0443 \u043D\u0430 \u0441\u0431\u043E\u0440\u043D\u044B\u0435 \u2014 \u0442\u0443\u0440\u043D\u0438\u0440\u043D\u044B\u0445 \u043E\u0447\u043A\u043E\u0432 \u043D\u0435\u0442, \u0442\u0440\u0435\u043D\u0435\u0440 \u0432\u043F\u0440\u0430\u0432\u0435 \u044D\u043A\u0441\u043F\u0435\u0440\u0438\u043C\u0435\u043D\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441 \u0441\u043E\u0441\u0442\u0430\u0432\u043E\u043C \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u0435\u0439, \u0438\u043D\u0442\u0435\u043D\u0441\u0438\u0432\u043D\u043E\u0441\u0442\u044C \u043D\u0438\u0436\u0435, \u043D\u043E \u0441\u0430\u043C\u043E\u043B\u044E\u0431\u0438\u0435 \u0438 \u0436\u0435\u043B\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u0435\u0431\u044F \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F. ${f.friendlyConditions ? "\u0423\u0441\u043B\u043E\u0432\u0438\u044F \u043C\u0430\u0442\u0447\u0430: " + f.friendlyConditions + ". " : ""}`;
+  const sr = resolveMatchSubRules(f);
+  const subNote = sr.isCustom ? ` Регламент замен: ${sr.label}.` : "";
+  if (isIntraSquad(f)) return `${lbl}: внутренний тренировочный спарринг (матч внутри одного клуба) — турнирных очков нет, игроки хорошо знают друг друга, борьба за место в стартовом составе и проверка тактических связок.${subNote} ${f.friendlyConditions ? "Условия матча: " + f.friendlyConditions + ". " : ""}`;
+  if (f.comp === FRIENDLY_COMP) return `${lbl}: \u0442\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447 \u0432 \u043F\u0430\u0443\u0437\u0443 \u043D\u0430 \u0441\u0431\u043E\u0440\u043D\u044B\u0435 \u2014 \u0442\u0443\u0440\u043D\u0438\u0440\u043D\u044B\u0445 \u043E\u0447\u043A\u043E\u0432 \u043D\u0435\u0442, \u0442\u0440\u0435\u043D\u0435\u0440 \u0432\u043F\u0440\u0430\u0432\u0435 \u044D\u043A\u0441\u043F\u0435\u0440\u0438\u043C\u0435\u043D\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441 \u0441\u043E\u0441\u0442\u0430\u0432\u043E\u043C \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u0435\u0439, \u0438\u043D\u0442\u0435\u043D\u0441\u0438\u0432\u043D\u043E\u0441\u0442\u044C \u043D\u0438\u0436\u0435, \u043D\u043E \u0441\u0430\u043C\u043E\u043B\u044E\u0431\u0438\u0435 \u0438 \u0436\u0435\u043B\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u0435\u0431\u044F \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F.${subNote} ${f.friendlyConditions ? "\u0423\u0441\u043B\u043E\u0432\u0438\u044F \u043C\u0430\u0442\u0447\u0430: " + f.friendlyConditions + ". " : ""}`;
   if (f.comp === "national" || f.comp === "national_u21") {
     return `${lbl}: международный матч национальной сборной (${f.label || compName(f)}) — престиж страны, проверка игровых связок в международную паузу и борьба игроков за место в заявке сборной.`;
   }
@@ -13083,7 +13186,9 @@ async function buildCtx(f) {
     sides: {},
     loan: {},
     legionLimit: limHome || limAway || null,
-    legionLimitBySide: { home: limHome?.onPitch ?? null, away: limAway?.onPitch ?? null }
+    legionLimitBySide: { home: limHome?.onPitch ?? null, away: limAway?.onPitch ?? null },
+    subRules: resolveMatchSubRules(f),
+    friendlyConditions: f.friendlyConditions || f.note || ""
   };
   const H = team(f.home), A = team(f.away);
   const lpH = teamLeagueProfile(H), lpA = teamLeagueProfile(A);
@@ -13434,6 +13539,11 @@ function buildUser(ctx, a, b, st, issues, mode = "full") {
   u += `\u041E\u0422\u0420\u0415\u0417\u041E\u041A \u0418\u0413\u0420\u042B: \u043C\u0438\u043D\u0443\u0442\u044B ${a}\u2013${b}
 
 `;
+  const sr = ctx.subRules || resolveMatchSubRules({ comp: ctx.compId, intraSquad: ctx.intraSquad, friendlyConditions: ctx.friendlyConditions });
+  if (sr.isCustom || ctx.compId === FRIENDLY_COMP || ctx.intraSquad) {
+    u += `ФОРМАТ ЗАМЕН МАТЧА: ${sr.promptSummary}${ctx.friendlyConditions ? ` | Условия: ${ctx.friendlyConditions}` : ""}
+`;
+  }
   if (st) {
     u += `ТЕКУЩЕЕ СОСТОЯНИЕ МАТЧА (к минуте ${a}):
 `;
@@ -13447,7 +13557,14 @@ function buildUser(ctx, a, b, st, issues, mode = "full") {
 `;
     u += `- Покинули поле (травма/замена): ${st.off.join(", ") || "нет"}
 `;
-    u += `- Использовано замен: ${H} ${st.subs.home}/5 игроков в ${st.slots.home}/3 окнах, ${A} ${st.subs.away}/5 игроков в ${st.slots.away}/3 окнах (вышли: ${st.ins.join(", ") || "нет"}). Новое окно замен открывать можно, только если использовано меньше 3.
+    const subCapTxt = sr.maxSubs == null ? "без лимита" : String(sr.maxSubs);
+    const winCapTxt = sr.maxWindows == null ? "без лимита" : String(sr.maxWindows);
+    const winRuleTxt = sr.maxSubs === 0
+      ? " Замены в этом матче запрещены."
+      : (sr.maxWindows == null
+          ? " Ограничения по окнам замен нет."
+          : ` Новое окно замен открывать можно, только если использовано меньше ${sr.maxWindows}.`);
+    u += `- Использовано замен: ${H} ${st.subs.home}/${subCapTxt} игроков в ${st.slots.home}/${winCapTxt} окнах, ${A} ${st.subs.away}/${subCapTxt} игроков в ${st.slots.away}/${winCapTxt} окнах (вышли: ${st.ins.join(", ") || "нет"}).${winRuleTxt}
 `;
     if ((ctx.legionLimitBySide?.home != null || ctx.legionLimitBySide?.away != null) && st.legOnPitch) {
       const limH = ctx.legionLimitBySide?.home;
@@ -13632,7 +13749,7 @@ ${tiredNotes("away", A)}
       u += `7.4. ПЛАНОВЫЕ ЗАМЕНЫ ТРЕНЕРА:
 - ${H}: ${formatPlannedSubsText("home")}
 - ${A}: ${formatPlannedSubsText("away")}
-- ПРАВИЛО ПЛАНОВЫХ ЗАМЕН: Если для команды заданы плановые замены и уходящий игрок ещё на поле (не удалён и не заменён ранее), а условие счёта/усталости выполняется на указанной минуте (в рамках лимита 5 замен в 3 окна) — ОБЯЗАТЕЛЬНО проведи указанную замену (type: "sub", players: [выходящий, уходящий]) около указанной минуты!
+- ПРАВИЛО ПЛАНОВЫХ ЗАМЕН: Если для команды заданы плановые замены и уходящий игрок ещё на поле (не удалён и не заменён ранее), а условие счёта/усталости выполняется на указанной минуте (в рамках регламента замен этого матча: ${sr.label}) — ОБЯЗАТЕЛЬНО проведи указанную замену (type: "sub", players: [выходящий, уходящий]) около указанной минуты!
 
 `;
     }
@@ -14218,8 +14335,11 @@ function normalizeEvents(raw, a, b, ctx, prev, minEv = 3, opts?: { strictLegionS
     if (type === "injury" && pids[0] && (outDays === void 0 || outDays > 0)) off.add(norm(ctx.names[pids[0]]));
     if (type === "sub") {
       if (["home", "away"].includes(team2)) {
+        const subRules = ctx?.subRules;
+        const maxSubs = subRules ? subRules.maxSubs : SUB_MAX_PLAYERS;
+        const maxWin = subRules ? subRules.maxWindows : SUB_MAX_WINDOWS;
         const tt = [...subT[team2], min * 60 + sec];
-        if (subs[team2] + 1 > SUB_MAX_PLAYERS || subWindows(tt) > SUB_MAX_WINDOWS) continue;
+        if ((maxSubs != null && subs[team2] + 1 > maxSubs) || (maxWin != null && subWindows(tt) > maxWin)) continue;
         subs[team2]++;
         subT[team2].push(min * 60 + sec);
       }
@@ -14721,8 +14841,11 @@ function fakePeriod(a, b, ctx, prev) {
       });
       for (const ps of eligible) {
         if (!onPitch[sideKey].has(ps.outPid) || subbedIn.has(ps.inPid)) continue;
+        const subRules = ctx?.subRules;
+        const maxSubs = subRules ? subRules.maxSubs : SUB_MAX_PLAYERS;
+        const maxWin = subRules ? subRules.maxWindows : SUB_MAX_WINDOWS;
         const nextTimes = [...subTimes[sideKey], m * 60 + 2];
-        if (subsCnt[sideKey] + 1 > SUB_MAX_PLAYERS || subWindows(nextTimes) > SUB_MAX_WINDOWS) continue;
+        if ((maxSubs != null && subsCnt[sideKey] + 1 > maxSubs) || (maxWin != null && subWindows(nextTimes) > maxWin)) continue;
         if (sideLimit != null) {
           const curLeg = [...onPitch[sideKey]].filter(isLegPid).length;
           const nextLeg = curLeg - (isLegPid(ps.outPid) ? 1 : 0) + (isLegPid(ps.inPid) ? 1 : 0);
@@ -20095,6 +20218,9 @@ var pubFx = (f) => {
     id: f.id,
     tech: f.tech || null,
     note: f.note || null,
+    friendlyConditions: f.friendlyConditions || null,
+    friendlySubFormat: f.friendlySubFormat || null,
+    subRules: resolveMatchSubRules(f),
     comp: f.comp,
     season: f.season || S(),
     cupPath: f.cupPath || (f.comp === "cup" && f.round != null ? Number(f.round) <= 6 ? "rpl_group" : "regions_qual" : null),
@@ -20687,7 +20813,9 @@ app.get("/api/match/:id", async (req, res) => {
         weather: (hasRich ? f.weather : fallbackW?.text) || m.ctx.weather || f.weather,
         weatherDetails: hasRich ? f.weatherDetails : fallbackW,
         derby: m.ctx.derby,
-        motiv: m.ctx.motiv
+        motiv: m.ctx.motiv,
+        subRules: m.ctx.subRules || resolveMatchSubRules(f),
+        friendlyConditions: m.ctx.friendlyConditions || f.friendlyConditions || f.note || ""
       };
       if (isAdm) {
         out.ctx.prompt = m.ctx.prompt1;
@@ -20711,7 +20839,9 @@ app.get("/api/match/:id", async (req, res) => {
       weather: hasRich ? f.weather : w.text,
       weatherDetails: hasRich ? f.weatherDetails : w,
       derby: dv ? dv.principled ? `\u041F\u0440\u0438\u043D\u0446\u0438\u043F\u0438\u0430\u043B\u044C\u043D\u044B\u0439 \u043C\u0430\u0442\u0447 (\u041D\u0415 \u0434\u0435\u0440\u0431\u0438): ${dv.name}. ${dv.note}` : `${dv.name}. ${dv.note}` : "\u043D\u0435\u0442",
-      motiv: { home: motivText(f.home, f), away: motivText(f.away, f) }
+      motiv: { home: motivText(f.home, f), away: motivText(f.away, f) },
+      subRules: resolveMatchSubRules(f),
+      friendlyConditions: f.friendlyConditions || f.note || ""
     };
   }
   if (!out.lineups) {
@@ -25273,6 +25403,7 @@ app.post("/api/club/lineup", needClub, (req, res) => {
   if (getFixtureLineupLockInfo(f).locked) {
     return fail(res, "До начала матча осталось менее 10 минут — вносить правки в состав и тактику уже нельзя");
   }
+  const subRules = resolveMatchSubRules(f);
   if (isIntraSquad(f)) {
     const clubPool = intraSquadClubPlayers(req.tid);
     const lPool = loanPoolFor(req.tid, f);
@@ -25288,7 +25419,7 @@ app.post("/api/club/lineup", needClub, (req, res) => {
       if (needGk && !st.some((id) => playerPositions(player(id)).includes("ВР"))) return { err: `В старте команды «${sideLbl}» нужен вратарь` };
       const bad = st.map(player).filter((p) => !isAvail(p, f.date, f.comp));
       if (bad.length) return { err: `Недоступны (${sideLbl}): ${bad.map((p) => p.name).join(", ")}` };
-      const benchIds0 = (Array.isArray(payload?.bench) ? payload.bench : []).filter((id) => sq.has(id) && !st.includes(id)).slice(0, 12);
+      const benchIds0 = (Array.isArray(payload?.bench) ? payload.bench : []).filter((id) => sq.has(id) && !st.includes(id)).slice(0, subRules.maxBench);
       for (const id of [...st, ...benchIds0]) {
         const w = loanBusyWith(id, f.date, req.tid);
         if (w) return { err: `${player(id)?.name}: уже заявлен на матч команды «${w}» в этот же день` };
@@ -25298,7 +25429,7 @@ app.post("/api/club/lineup", needClub, (req, res) => {
       const slotRes = assignFormationSlots(fm, st, payload?.slots);
       const orderedSt = slotRes.entries.length === st.length ? slotRes.entries.map((e) => e.pid) : st;
       const roles = normalizeRoles(payload?.roles, sq);
-      const plannedSubs = normalizePlannedSubs(payload?.plannedSubs, orderedSt, benchIds0);
+      const plannedSubs = normalizePlannedSubs(payload?.plannedSubs, orderedSt, benchIds0, { maxSubs: subRules.maxSubs });
       return {
         lineup: {
           formation: fm,
@@ -25371,7 +25502,7 @@ app.post("/api/club/lineup", needClub, (req, res) => {
   if (!st.some((id) => playerPositions(player(id)).includes("\u0412\u0420"))) return fail(res, "\u0412 \u0441\u0442\u0430\u0440\u0442\u0435 \u043D\u0443\u0436\u0435\u043D \u0432\u0440\u0430\u0442\u0430\u0440\u044C");
   const bad = st.map(player).filter((p) => !isAvail(p, f.date, f.comp));
   if (bad.length) return fail(res, `\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B: ${bad.map((p) => p.name).join(", ")}`);
-  const benchIds0 = (req.body.bench || []).filter((id) => sq.has(id) && !st.includes(id)).slice(0, 12);
+  const benchIds0 = (req.body.bench || []).filter((id) => sq.has(id) && !st.includes(id)).slice(0, subRules.maxBench);
   for (const id of [...st, ...benchIds0]) {
     const w = loanBusyWith(id, f.date, req.tid);
     if (w) return fail(res, `${player(id)?.name}: \u0443\u0436\u0435 \u0437\u0430\u044F\u0432\u043B\u0435\u043D \u043D\u0430 \u043C\u0430\u0442\u0447 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xAB${w}\xBB \u0432 \u044D\u0442\u043E\u0442 \u0436\u0435 \u0434\u0435\u043D\u044C`);
@@ -25390,7 +25521,7 @@ app.post("/api/club/lineup", needClub, (req, res) => {
   const slotRes = assignFormationSlots(fm, st, req.body.slots);
   const orderedSt = slotRes.entries.length === st.length ? slotRes.entries.map((e) => e.pid) : st;
   const roles = normalizeRoles(req.body.roles, sq);
-  const plannedSubs = normalizePlannedSubs(req.body.plannedSubs, orderedSt, bench);
+  const plannedSubs = normalizePlannedSubs(req.body.plannedSubs, orderedSt, bench, { maxSubs: subRules.maxSubs });
   if (matchLegLimit) {
     const subCheck = evaluatePlannedSubsLegionLimit(plannedSubs, orderedSt, matchLegLimit.onPitch, false);
     if (!subCheck.ok && subCheck.error) {
@@ -29979,6 +30110,8 @@ var pubFriendly = (r) => {
     realTime,
     breakName: friendlyBreakFor(gameDate)?.name || "",
     conditions: r.conditions,
+    subFormat: r.subFormat || "auto",
+    subRules: resolveMatchSubRules(r),
     budget: r.budget,
     formattedBudget: isIntra ? "Бесплатный спарринг" : fmtEuro(r.budget),
     nationalType: r.nationalType || "",
@@ -30099,6 +30232,7 @@ function tryFinalizeFriendly(r) {
     friendlyId: r.id,
     friendlyBudget: budget,
     friendlyConditions: r.conditions,
+    friendlySubFormat: r.subFormat || void 0,
     nationalType: r.nationalType || void 0,
     neutralField: place.neutral,
     stadium: place.neutral ? `${place.stadium} (\u043D\u0435\u0439\u0442\u0440\u0430\u043B\u044C\u043D\u043E\u0435 \u043F\u043E\u043B\u0435${place.city ? ", \u0433. " + place.city : ""})` : place.stadium,
@@ -30122,12 +30256,14 @@ function tryFinalizeFriendly(r) {
   invalidateAgg();
   setTimeout(runAutoStartTick, 50);
   try {
+    const sr = resolveMatchSubRules(f);
+    const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
     if (isIntra) {
       tg(`⚽ <b>Внутрикомандный спарринг назначен</b>
 «${esc(sideDisplayName(f, "home"))}» — «${esc(sideDisplayName(f, "away"))}»
 🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 ⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>
-🏟 ${esc(place.stadium)}
+🏟 ${esc(place.stadium)}${subFmtLine}
 <i>${esc(r.conditions)}</i>`);
     } else {
       tg(`\u{1F91D} <b>\u0422\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447 \u0441\u043E\u0433\u043B\u0430\u0441\u043E\u0432\u0430\u043D</b>
@@ -30135,7 +30271,7 @@ function tryFinalizeFriendly(r) {
 \u{1F3AE} \u0418\u0433\u0440\u043E\u0432\u043E\u0435: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 \u23F0 \u041D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435: <b>${esc(realDate)} ${esc(realTime)} \u041C\u0421\u041A</b>
 \u{1F3DF} ${esc(place.stadium)}
-\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442 \u043C\u0430\u0442\u0447\u0430: <b>${esc(fmtEuro(budget))}</b>
+\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442 \u043C\u0430\u0442\u0447\u0430: <b>${esc(fmtEuro(budget))}</b>${subFmtLine}
 <i>${esc(r.conditions)}</i>`);
     }
   } catch {
@@ -30228,6 +30364,7 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
   const actorInfo = resolveActor(req);
   const frAdCheck = checkAndConsumeFriendlyRequestAd(db, A.id, matchedBreak.id, actorInfo.actorKey, b.adProof);
   if (!frAdCheck.ok) return fail(res, frAdCheck.error);
+  const subFormat = normalizeSubFormatCode(b.subFormat);
   const conditions = cleanTxt(b.conditions, 500) || `Внутрикомандный спарринг: ${homeLabel} против ${awayLabel}`;
   const r = {
     id: "fr_" + uid(),
@@ -30246,6 +30383,7 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
     realDate,
     realTime,
     conditions,
+    subFormat,
     budget: 0,
     needOpponentApproval: false,
     opponentApproval: "not_required",
@@ -30257,11 +30395,13 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
   db.friendlyRequests.unshift(r);
   save();
   try {
+    const sr = resolveMatchSubRules(r);
+    const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
     tg(`⚽ <b>Заявка на внутрикомандный спарринг</b>
 «${esc(A.name)} (${esc(homeLabel)})» — «${esc(A.name)} (${esc(awayLabel)})»
 🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 ⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>
-🏟 ${esc(friendlyPlace(r).stadium)}
+🏟 ${esc(friendlyPlace(r).stadium)}${subFmtLine}
 <i>${esc(conditions)}</i>
 Требуется решение администратора.`);
   } catch {
@@ -30335,6 +30475,7 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
   let realTime = String(b.realTime || "19:00").trim();
   if (!/^\d{1,2}:\d{2}$/.test(realTime)) return fail(res, "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u043D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435 (\u0440\u0435\u0430\u043B\u044C\u043D\u043E\u0435) \u0432\u0440\u0435\u043C\u044F \u043C\u0430\u0442\u0447\u0430");
   if (realTime.length === 4) realTime = "0" + realTime;
+  const subFormat = normalizeSubFormatCode(b.subFormat);
   const conditions = cleanTxt(b.conditions, 500);
   if (conditions.length < 3) return fail(res, "\u041F\u0440\u043E\u043F\u0438\u0448\u0438\u0442\u0435 \u0443\u0441\u043B\u043E\u0432\u0438\u044F \u043C\u0430\u0442\u0447\u0430");
   const budget = Math.round(Number(b.budget));
@@ -30361,6 +30502,7 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
     realDate,
     realTime,
     conditions,
+    subFormat,
     budget,
     needOpponentApproval: needClub2,
     opponentApproval: needClub2 ? "pending" : "not_required",
@@ -30372,12 +30514,14 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
   db.friendlyRequests.unshift(r);
   save();
   try {
+    const sr = resolveMatchSubRules(r);
+    const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
     tg(`\u{1F91D} <b>\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0430 \u0442\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447</b>
 \xAB${esc(A.name)}\xBB \u043F\u0440\u0438\u0433\u043B\u0430\u0448\u0430\u0435\u0442 \xAB${esc(B.name)}\xBB
 \u{1F3AE} \u0418\u0433\u0440\u043E\u0432\u043E\u0435: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 \u23F0 \u041D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435: <b>${esc(realDate)} ${esc(realTime)} \u041C\u0421\u041A</b>
 \u{1F3DF} ${esc(pubFriendly(r).venueText)}
-\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442: <b>${esc(fmtEuro(budget))}</b>
+\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442: <b>${esc(fmtEuro(budget))}</b>${subFmtLine}
 <i>${esc(conditions)}</i>
 ${needClub2 ? "\u041D\u0443\u0436\u043D\u044B \u0441\u043E\u0433\u043B\u0430\u0441\u0438\u044F \u043A\u043B\u0443\u0431\u0430-\u0441\u043E\u043F\u0435\u0440\u043D\u0438\u043A\u0430 \u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430." : "\u0422\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044F \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430."}`);
   } catch {
@@ -30422,6 +30566,7 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
   let realTime = String(b.realTime || "19:00").trim();
   if (!/^\d{1,2}:\d{2}$/.test(realTime)) return fail(res, "Некорректное настоящее (реальное) время матча");
   if (realTime.length === 4) realTime = "0" + realTime;
+  const subFormat = normalizeSubFormatCode(b.subFormat);
   const conditions = cleanTxt(b.conditions, 500) || "Товарищеский матч со сборной России";
   if ((db.friendlyRequests ||= []).some((r2) => r2.status === "pending" && r2.clubId === A.id && r2.opponentId === B.id && (r2.gameDate || r2.date) === gameDate)) {
     return fail(res, "Такая заявка на эту игровую дату уже подана и ждёт решения");
@@ -30444,6 +30589,7 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
     realDate,
     realTime,
     conditions,
+    subFormat,
     budget: 0,
     needOpponentApproval: false,
     opponentApproval: "not_required",
@@ -30455,7 +30601,9 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
   db.friendlyRequests.unshift(r);
   save();
   try {
-    tgComp("national", `🇷🇺 <b>Заявка на матч со сборной</b>\n«${esc(A.name)}» — «${esc(B.name)}»\n🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>\n⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>\n📺 Оплачено просмотрами рекламы: ${NT_FRIENDLY_REQUIRED_ADS}\n<i>${esc(conditions)}</i>`, { ruleKey: "transfersAndNews", kind: "nt_friendly" });
+    const sr = resolveMatchSubRules(r);
+    const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    tgComp("national", `🇷🇺 <b>Заявка на матч со сборной</b>\n«${esc(A.name)}» — «${esc(B.name)}»\n🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>\n⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>\n📺 Оплачено просмотрами рекламы: ${NT_FRIENDLY_REQUIRED_ADS}${subFmtLine}\n<i>${esc(conditions)}</i>`, { ruleKey: "transfersAndNews", kind: "nt_friendly" });
   } catch {
   }
   res.json({ ok: 1, request: pubFriendly(r), message: `Заявка отправлена администратору. При отказе или отклонении на счёт клуба вернутся ${NT_FRIENDLY_REFUND_ADS} просмотров.`, ads: getNtFriendlyAdSummary(db, A.id) });
@@ -32789,6 +32937,7 @@ export {
   realAt,
   reconcileLightGoals,
   rescore,
+  resolveMatchSubRules,
   resumeLive,
   runAutoStartTick,
   runMatch,
