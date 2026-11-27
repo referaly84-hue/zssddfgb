@@ -1,11 +1,62 @@
 import type { Express, Response } from "express";
 import fs from "fs";
+import os from "os";
 import path from "path";
+import { fileURLToPath } from "url";
+
+function ensureSharpFontconfig() {
+  try {
+    const baseDir = path.dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      path.join(baseDir, "fonts"),
+      path.resolve(process.cwd(), "fonts"),
+    ];
+    const fontsDir = candidates.find((d) => fs.existsSync(d) && fs.statSync(d).isDirectory());
+    if (!fontsDir) return;
+
+    const xmlEsc = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const cacheDir = path.join(os.tmpdir(), "virtrpl_fc_cache");
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const confPath = path.join(os.tmpdir(), "virtrpl_fonts.conf");
+    const confXml = [
+      `<?xml version="1.0"?>`,
+      `<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">`,
+      `<fontconfig>`,
+      `  <dir>${xmlEsc(fontsDir)}</dir>`,
+      `  <dir>/usr/share/fonts</dir>`,
+      `  <cachedir>${xmlEsc(cacheDir)}</cachedir>`,
+      `  <match target="pattern">`,
+      `    <test qual="any" name="family"><string>Noto Sans Display</string></test>`,
+      `    <edit name="family" mode="prepend" binding="strong"><string>Liberation Sans</string></edit>`,
+      `  </match>`,
+      `  <match target="pattern">`,
+      `    <test qual="any" name="family"><string>Noto Sans</string></test>`,
+      `    <edit name="family" mode="prepend" binding="strong"><string>Liberation Sans</string></edit>`,
+      `  </match>`,
+      `  <alias>`,
+      `    <family>sans-serif</family>`,
+      `    <prefer><family>Liberation Sans</family></prefer>`,
+      `  </alias>`,
+      `  <alias>`,
+      `    <family>monospace</family>`,
+      `    <prefer><family>JetBrains Mono</family></prefer>`,
+      `  </alias>`,
+      `</fontconfig>`,
+    ].join("\n");
+    fs.writeFileSync(confPath, confXml, "utf8");
+    process.env.FONTCONFIG_FILE = confPath;
+    process.env.FONTCONFIG_PATH = os.tmpdir();
+  } catch {
+    /* fallback to system fontconfig if available */
+  }
+}
 
 type SharpFn = (typeof import("sharp"))["default"];
 let _sharpFn: SharpFn | null = null;
 async function getSharp(): Promise<SharpFn> {
   if (!_sharpFn) {
+    ensureSharpFontconfig();
     const mod = await import("sharp");
     _sharpFn = mod.default;
   }
@@ -674,7 +725,8 @@ export function createChannelsController(ctx: ChannelsServerContext) {
 
       <!-- Footer -->
       <rect x="48" y="556" width="1104" height="72" rx="14" fill="#0b1220" fill-opacity="0.88" stroke="#ffffff" stroke-opacity="0.14"/>
-      <text x="80" y="599" fill="#e2e8f0" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="20">🏟  ${svgEsc(truncText(venueLine, 56))}</text>
+      <circle cx="86" cy="592" r="5" fill="${meta.secondary}"/>
+      <text x="102" y="599" fill="#e2e8f0" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="20">${svgEsc(truncText(venueLine, 55))}</text>
       <text x="1120" y="599" text-anchor="end" fill="#94a3b8" font-family="'Noto Sans Display','Noto Sans',sans-serif" font-weight="700" font-size="17">ВИРТ РПЛ · ПРЯМОЙ ЭФИР</text>
     </svg>`;
 
@@ -921,7 +973,12 @@ export function createChannelsController(ctx: ChannelsServerContext) {
           <text x="48" y="106" fill="#ffffff" font-family="'Noto Sans Display',sans-serif" font-weight="900" font-size="34">${svgEsc(title)}</text>
           <text x="1152" y="102" text-anchor="end" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="19">${svgEsc(subtitle)}</text>
           ${cardMarkup}
-          <text x="48" y="805" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-size="14">🟢 1–2 место: 1/8 Пути РПЛ   ·   🟡 3 место: Путь регионов   ·   🔴 4 место: Вылет</text>
+          <circle cx="54" cy="800" r="6" fill="#22c55e"/>
+          <text x="68" y="805" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-size="14">1–2 место: 1/8 Пути РПЛ</text>
+          <circle cx="290" cy="800" r="6" fill="#f59e0b"/>
+          <text x="304" y="805" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-size="14">3 место: Путь регионов</text>
+          <circle cx="520" cy="800" r="6" fill="#ef4444"/>
+          <text x="534" y="805" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-size="14">4 место: Вылет</text>
         </svg>`;
         const sharp = await getSharp();
         const buffer = await sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
@@ -1073,7 +1130,7 @@ export function createChannelsController(ctx: ChannelsServerContext) {
       <text x="1156" y="72" text-anchor="end" fill="#cbd5e1" font-family="'Noto Sans',sans-serif" font-weight="700" font-size="18">${svgEsc(truncText(enriched.title || "Сбор", 36))}</text>
       <text x="1156" y="102" text-anchor="end" fill="#facc15" font-family="'JetBrains Mono',monospace" font-weight="800" font-size="19">ИГРОКОВ: ${list.length}</text>
       ${colSvg}
-      <text x="44" y="${height - 28}" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="14">${matchesText ? `📅 Матчи: ${svgEsc(truncText(matchesText, 95))}` : "Российский Футбольный Союз · Официальная заявка"}</text>
+      <text x="44" y="${height - 28}" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="14">${matchesText ? `Матчи: ${svgEsc(truncText(matchesText, 95))}` : "Российский Футбольный Союз · Официальная заявка"}</text>
     </svg>`;
 
     const sharp = await getSharp();
