@@ -12457,33 +12457,34 @@ function lineupForm(box, f, c, withT, app) {
   const renderRolesEditor = () => {
     const wrap = box.querySelector('#roles_editor');
     if (!wrap) return;
-    const { sPids, bPids } = getSelected();
-    const sSet = new Set(sPids), bSet = new Set(bPids);
-    const allOptionsPlayers = [...sq, ...loanPool];
-    const seen = new Set();
-    const uniqPlayers = allOptionsPlayers.filter(p => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+    const { sPids } = getSelected();
+    const sSet = new Set(sPids);
+    const starterPlayers = sPids
+      .map(pid => poolById[pid])
+      .filter(Boolean)
+      .sort((a, b) => (order[a.pos] ?? 6) - (order[b.pos] ?? 6) || String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
     const warnings = [];
     const fieldsHtml = ROLE_DEFS.map(rd => {
-      const curVal = currentRoles[rd.key] || '';
-      if (curVal && !sSet.has(curVal)) {
-        const rp = poolById[curVal];
-        const whyOff = !availIds.has(curVal) ? 'недоступен — вне заявки' : (bSet.has(curVal) ? 'на скамейке' : 'не в старте');
-        warnings.push(`${rd.label.replace(/^[^ ]+ /, '')}: ${rp?.name || curVal} (${whyOff})`);
+      const rawVal = currentRoles[rd.key] || '';
+      const curVal = rawVal && sSet.has(rawVal) ? rawVal : '';
+      if (rawVal && !sSet.has(rawVal)) {
+        const rp = poolById[rawVal];
+        warnings.push(`${rd.label.replace(/^[^ ]+ /, '')}: ${rp?.name || rawVal}`);
+        delete currentRoles[rd.key];
       }
-      const opts = uniqPlayers.map(p => {
-        const pOk = availIds.has(p.id);
-        const statusHint = !pOk ? ' [Недоступен]' : (sSet.has(p.id) ? ' [Старт]' : (bSet.has(p.id) ? ' [Запас]' : ''));
-        return `<option value="${e(p.id)}" ${curVal === p.id ? 'selected' : ''} ${!pOk && curVal !== p.id ? 'disabled' : ''}>${e(clientPosLabel(p))} · ${e(p.name)}${statusHint}</option>`;
-      }).join('');
+      const opts = starterPlayers.map(p =>
+        `<option value="${e(p.id)}" ${curVal === p.id ? 'selected' : ''}>${e(clientPosLabel(p))} · ${e(p.name)}</option>`
+      ).join('');
       return `<div>
         <label style="display:block;font-size:12px;font-weight:600;margin-bottom:3px">${rd.label}</label>
-        <select class="role-pick" data-role="${rd.key}" style="width:100%"><option value="">— не назначен —</option>${opts}</select>
+        <select class="role-pick" data-role="${rd.key}" style="width:100%" ${starterPlayers.length ? '' : 'disabled'}><option value="">${starterPlayers.length ? '— не назначен —' : '— сначала выберите старт —'}</option>${opts}</select>
       </div>`;
     }).join('');
     wrap.innerHTML = `
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px">⭐ Капитан и исполнители стандартов на матч</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">⭐ Капитан и исполнители стандартов на матч</div>
+      <div class="muted small" style="margin-bottom:8px">Отображаются только игроки стартового состава (${starterPlayers.length}).</div>
       <div class="grid g2" style="gap:8px">${fieldsHtml}</div>
-      ${warnings.length ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;font-size:12px"><b>⚠ Вне стартового состава:</b> ${e(warnings.join('; '))} — стандарт перейдёт запасному исполнителю, пока игрок не на поле.</div>` : ''}
+      ${warnings.length ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;font-size:12px"><b>⚠ Сняты роли игроков вне старта:</b> ${e(warnings.join('; '))} — назначьте исполнителей из стартового состава.</div>` : ''}
     `;
     wrap.querySelectorAll('.role-pick').forEach(sel => {
       sel.addEventListener('change', () => {
@@ -13450,14 +13451,19 @@ function intraLineupForm(box, f, c, withT, app) {
     // Roles editor
     const rolesWrap = box.querySelector('#intra_roles_editor');
     if (rolesWrap) {
-      const sSet = new Set(sPids), bSet = new Set(bPids);
-      const sidePlayers = [...sPids, ...bPids].map(pid => poolById[pid]).filter(Boolean);
+      const sSet = new Set(sPids);
+      const sidePlayers = sPids
+        .map(pid => poolById[pid])
+        .filter(Boolean)
+        .sort((a, b) => (order[a.pos] ?? 6) - (order[b.pos] ?? 6) || String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
       const fieldsHtml = ROLE_DEFS.map(rd => {
-        const curVal = stSide.roles[rd.key] || '';
-        const opts = sidePlayers.map(p => `<option value="${e(p.id)}" ${curVal === p.id ? 'selected' : ''}>${e(clientPosLabel(p))} · ${e(p.name)} ${sSet.has(p.id) ? '[Старт]' : '[Запас]'}</option>`).join('');
-        return `<div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:3px">${rd.label}</label><select class="intra-role-pick" data-role="${rd.key}" style="width:100%"><option value="">— авто —</option>${opts}</select></div>`;
+        const rawVal = stSide.roles[rd.key] || '';
+        const curVal = rawVal && sSet.has(rawVal) ? rawVal : '';
+        if (rawVal && !sSet.has(rawVal)) delete stSide.roles[rd.key];
+        const opts = sidePlayers.map(p => `<option value="${e(p.id)}" ${curVal === p.id ? 'selected' : ''}>${e(clientPosLabel(p))} · ${e(p.name)}</option>`).join('');
+        return `<div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:3px">${rd.label}</label><select class="intra-role-pick" data-role="${rd.key}" style="width:100%" ${sidePlayers.length ? '' : 'disabled'}><option value="">${sidePlayers.length ? '— авто —' : '— сначала выберите старт —'}</option>${opts}</select></div>`;
       }).join('');
-      rolesWrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:8px">⭐ Капитан и стандарты — ${e(sideLabel)}</div><div class="grid g2" style="gap:8px">${fieldsHtml}</div>`;
+      rolesWrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">⭐ Капитан и стандарты — ${e(sideLabel)}</div><div class="muted small" style="margin-bottom:8px">Отображаются только игроки стартового состава (${sidePlayers.length}).</div><div class="grid g2" style="gap:8px">${fieldsHtml}</div>`;
       rolesWrap.querySelectorAll('.intra-role-pick').forEach(sel => sel.addEventListener('change', () => {
         if (sel.value) stSide.roles[sel.dataset.role] = sel.value;
         else delete stSide.roles[sel.dataset.role];
